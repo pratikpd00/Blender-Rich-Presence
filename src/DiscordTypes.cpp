@@ -1,6 +1,7 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include <time.h>
+#include <cstdio>
 #include "discord_files/discord.h"
 
 using namespace discord;
@@ -43,7 +44,7 @@ int activity_init(ActivityObject* self, PyObject* args, PyObject* kwds) {
         return -1;
     }
 
-    //client id is 0 to upload to public repo
+    //client id is 0 to commit to a public repo
     Core::Create(0, DiscordCreateFlags_Default, &(self->core));
 
     self->activity.SetName("Blender");
@@ -52,16 +53,39 @@ int activity_init(ActivityObject* self, PyObject* args, PyObject* kwds) {
     assets.SetLargeText("Blender");
     assets.SetLargeImage("blender_icon_1024x1024");
 
-    self->core->ActivityManager().UpdateActivity(self->activity);
+    self->core->ActivityManager().UpdateActivity(self->activity, [](Result result) {
+        if (result == Result::Ok) {
+            printf("successfully started presence");
+        } else {
+            printf("unsuccessfully started presence");
+        }
+    });
 }
 
 PyObject* update(ActivityObject* self, PyObject* Py_UNUSED(ignored)) {
-    self->core->ActivityManager().UpdateActivity(self->activity);
+    self->core->ActivityManager().UpdateActivity(self->activity, [](Result result) {
+        if (result == Result::Ok) {
+            printf("successfully updated presence");
+        } else {
+            printf("unsuccessfully updated presence");
+        }
+    });
+}
+
+PyObject* clear(ActivityObject* self, PyObject* Py_UNUSED(ignored)) {
+    self->core->ActivityManager().ClearActivity([](Result result) {
+        if (result == Result::Ok) {
+            printf("successfully stopped presence");
+        } else {
+            printf("unsuccessfully stopped presence");
+        }
+    });
 }
 
 
 static PyMethodDef ActivityMethod[] = {
     {"update", (PyCFunction) update, METH_NOARGS, "Return the name, combining the first and last name"},
+    {"clear", (PyCFunction) clear,  METH_NOARGS, "Clears Blender's presence from discord"},
     {NULL}
 };
 
@@ -70,39 +94,40 @@ static PyGetSetDef getSetters[] = {
     {NULL}
 };
 
-static PyTypeObject activityType = {
-    PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "activity.Activity",
-    .tp_doc = "An object that manages rich presence for Blender",
-    .tp_basicsize = sizeof(activityObject),
-    .tp_itemsize = 0,
-    .tp_flags = Py_TPFLAGS_DEFAULT,
-    .tp_new = PyType_GenericNew,
-    .tp_init = (initproc) activity_init,
-    .tp_methods = ActivityMethod,
-    .tp_getset = getSetters,
-};
 
-static PyModuleDef BlenderActivity = {
-    PyModuleDef_HEAD_INIT,
-    .m_name = "activity",
-    .m_doc = "Allows Blender's scripting engine to use Discord rich presence",
-    .m_size = -1,
-}
+PyMODINIT_FUNC PyInit_BlenderActivity() {
+    PyTypeObject activityType;
 
-PyMODINIT_FUNC PyInit_custom3() {
+    activityType.ob_base = PyVarObject_HEAD_INIT(NULL, 0)
+    activityType.tp_name = "activity.Activity";
+    activityType.tp_doc = "An object that manages rich presence for Blender";
+    activityType.tp_basicsize = sizeof(ActivityObject);
+    activityType.tp_itemsize = 0;
+    activityType.tp_flags = Py_TPFLAGS_DEFAULT;
+    activityType.tp_new = PyType_GenericNew;
+    activityType.tp_init = (initproc) activity_init;
+    activityType.tp_methods = ActivityMethod;
+    activityType.tp_getset = getSetters;
+
+    PyModuleDef BlenderActivity;
+
+    BlenderActivity.m_base = PyModuleDef_HEAD_INIT;
+    BlenderActivity.m_name = "activity";
+    BlenderActivity.m_doc = "Allows Blender's scripting engine to use Discord rich presence";
+    BlenderActivity.m_size = -1;
+
     PyObject *module;
     if (PyType_Ready(&activityType) < 0) {
         return NULL;
     }
 
     module = PyModule_Create(&BlenderActivity);
-    if (m == NULL) {
+    if (module == NULL) {
         return NULL;
     }
 
     Py_INCREF(&activityType);
-    if (PyModule_AddObject(m, "Custom", (PyObject *) &activityType) < 0) {
+    if (PyModule_AddObject(module, "Custom", (PyObject *) &activityType) < 0) {
         Py_DECREF(&activityType);
         Py_DECREF(module);
         return NULL;
